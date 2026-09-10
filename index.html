@@ -1456,7 +1456,6 @@
             "Cardio": ["Caminadora", "Bicicleta estática", "Elíptica", "Escaladora (StairMaster)", "Remo (máquina)", "Bicicleta al aire libre", "Trote continuo", "Intervalos (HIIT)", "Cuerda / salto a la cuerda", "Sparring / boxeo"],
         };
 
-        /* Plan semilla, basado en el plan original de 6 días, usado como primera plantilla disponible */
         const SEED_PLAN_DAYS = [
             {
                 nombre: "Glúteo + Cuádriceps + Pantorrilla", ejercicios: [
@@ -1546,8 +1545,27 @@
         function getCssVar(name) { return getComputedStyle(document.body).getPropertyValue(name).trim() || "#888"; }
 
         /* ---------------------------------------------------------
-           3. MODELO DE DATOS
+           3. MODELO DE DATOS Y NUEVO HELPER PARA SEMANAS
            --------------------------------------------------------- */
+
+        // Helper para inicializar y obtener los días de la semana activa
+        function getDays(c) {
+            if (!c.daysByWeek) {
+                c.daysByWeek = {};
+                for (let i = 1; i <= c.semanas; i++) {
+                    c.daysByWeek[i] = JSON.parse(JSON.stringify(c.days || []));
+                    if (i !== 1) {
+                        c.daysByWeek[i].forEach(d => {
+                            d.id = uid("day");
+                            d.ejercicios.forEach(ex => ex.id = uid("ex"));
+                        });
+                    }
+                }
+            }
+            if (!c.daysByWeek[c.currentWeek]) c.daysByWeek[c.currentWeek] = [];
+            return c.daysByWeek[c.currentWeek];
+        }
+
         function newExercise(grupo, ejercicio, series, reps, descanso) {
             return { id: uid("ex"), grupo, ejercicio, series: series || 3, reps: reps || "10-12", descanso: descanso || 60, peso: "", rir: "", notas: "", completado: false };
         }
@@ -1563,7 +1581,6 @@
         }
 
         function newClient(nombre) {
-            const days = SEED_PLAN_DAYS.map(dayFromTemplate).length ? [] : [];
             return {
                 id: uid("cli"),
                 nombre: nombre || "Nuevo alumno",
@@ -1572,6 +1589,7 @@
                 currentWeek: 1,
                 activeDayId: null,
                 days: [],
+                daysByWeek: {}, // Nueva estructura para semanas independientes
                 weeks: weeksObjectFor(8),
                 notes: {},
                 history: [],
@@ -1720,7 +1738,8 @@
         function openClient(id) {
             state.activeClientId = id;
             const c = state.clients[id];
-            if (c && !c.activeDayId && c.days.length) c.activeDayId = c.days[0].id;
+            const currentDays = getDays(c);
+            if (c && !c.activeDayId && currentDays.length) c.activeDayId = currentDays[0].id;
             state.ui.screen = "client";
             saveState();
             renderShell();
@@ -1742,9 +1761,10 @@
            7. PANTALLA: INICIO (ROSTER DE ALUMNOS)
            --------------------------------------------------------- */
         function clientProgressPct(c) {
-            const totalEx = c.days.reduce((s, d) => s + d.ejercicios.length, 0);
+            const currentDays = getDays(c);
+            const totalEx = currentDays.reduce((s, d) => s + d.ejercicios.length, 0);
             if (!totalEx) return 0;
-            const done = c.days.reduce((s, d) => s + d.ejercicios.filter(e => e.completado).length, 0);
+            const done = currentDays.reduce((s, d) => s + d.ejercicios.filter(e => e.completado).length, 0);
             return Math.round((done / totalEx) * 100);
         }
 
@@ -1756,17 +1776,17 @@
                 const c = state.clients[id];
                 const pct = clientProgressPct(c);
                 return `
-        <div class="client-card" data-id="${c.id}">
-          <h3>${escapeAttr(c.nombre)}</h3>
-          <div class="meta">${escapeAttr(c.objetivo) || "Sin objetivo definido"}</div>
-          <div class="meta">Semana ${c.currentWeek} de ${c.semanas} · ${c.days.length} día(s) de plan</div>
-          <div class="bar"><span style="width:${pct}%"></span></div>
-          <div class="actions">
-            <button class="btn btn-sm btn-primary" data-act="open" data-id="${c.id}">Abrir</button>
-            <button class="btn btn-sm" data-act="duplicate" data-id="${c.id}">⧉ Duplicar</button>
-            <button class="btn btn-sm btn-danger" data-act="delete" data-id="${c.id}">🗑</button>
-          </div>
-        </div>`;
+            <div class="client-card" data-id="${c.id}">
+              <h3>${escapeAttr(c.nombre)}</h3>
+              <div class="meta">${escapeAttr(c.objetivo) || "Sin objetivo definido"}</div>
+              <div class="meta">Semana ${c.currentWeek} de ${c.semanas} · ${getDays(c).length} día(s) de plan</div>
+              <div class="bar"><span style="width:${pct}%"></span></div>
+              <div class="actions">
+                <button class="btn btn-sm btn-primary" data-act="open" data-id="${c.id}">Abrir</button>
+                <button class="btn btn-sm" data-act="duplicate" data-id="${c.id}">⧉ Duplicar</button>
+                <button class="btn btn-sm btn-danger" data-act="delete" data-id="${c.id}">🗑</button>
+              </div>
+            </div>`;
             }).join("");
             grid.innerHTML = cards + `<div class="new-client-card" id="btnNewClient">➕ Nuevo alumno</div>`;
             if (ids.length === 0) {
@@ -1792,15 +1812,15 @@
             document.getElementById("tplCountTag").textContent = allTpl.length + " guardadas";
             const list = document.getElementById("tplListGlobal");
             list.innerHTML = allTpl.length ? allTpl.map(t => `
-        <div class="tpl-row">
-          <div>
-            <div class="tpl-name">${t.tipo === "plan" ? "📋" : "📄"} ${escapeAttr(t.nombre)}</div>
-            <div class="tpl-meta">${t.tipo === "plan" ? (t.dias.length + " día(s)") : (t.ejercicios.length + " ejercicio(s)")}</div>
-          </div>
-          <div class="tpl-actions">
-            <button class="btn btn-sm btn-danger" data-act="delete-tpl" data-tipo="${t.tipo}" data-id="${t.id}">🗑 Eliminar</button>
-          </div>
-        </div>`).join("") : `<div class="empty-state">Aún no guardas plantillas. Desde el plan de un alumno puedes guardar un día o el plan completo como plantilla para reutilizarlo con otros.</div>`;
+            <div class="tpl-row">
+              <div>
+                <div class="tpl-name">${t.tipo === "plan" ? "📋" : "📄"} ${escapeAttr(t.nombre)}</div>
+                <div class="tpl-meta">${t.tipo === "plan" ? (t.dias.length + " día(s)") : (t.ejercicios.length + " ejercicio(s)")}</div>
+              </div>
+              <div class="tpl-actions">
+                <button class="btn btn-sm btn-danger" data-act="delete-tpl" data-tipo="${t.tipo}" data-id="${t.id}">🗑 Eliminar</button>
+              </div>
+            </div>`).join("") : `<div class="empty-state">Aún no guardas plantillas. Desde el plan de un alumno puedes guardar un día o el plan completo como plantilla para reutilizarlo con otros.</div>`;
         }
 
         /* ---------------------------------------------------------
@@ -1845,29 +1865,32 @@
 
         function renderDayTabs() {
             const c = activeClient(); if (!c) return;
+            const currentDays = getDays(c);
             const wrap = document.getElementById("dayTabs");
-            wrap.innerHTML = c.days.map((d, i) => `
-        <button class="tab-btn" role="tab" data-day="${d.id}" aria-selected="${c.activeDayId === d.id}">
-          <span class="d-num">DÍA ${i + 1}</span>
-          <span class="d-name">${escapeAttr(d.nombre)}</span>
-        </button>`).join("") + `<button class="tab-add" id="btnAddDay" title="Añadir día" aria-label="Añadir día">➕</button>`;
+            wrap.innerHTML = currentDays.map((d, i) => `
+            <button class="tab-btn" role="tab" data-day="${d.id}" aria-selected="${c.activeDayId === d.id}">
+              <span class="d-num">DÍA ${i + 1}</span>
+              <span class="d-name">${escapeAttr(d.nombre)}</span>
+            </button>`).join("") + `<button class="tab-add" id="btnAddDay" title="Añadir día" aria-label="Añadir día">➕</button>`;
 
             const bar = document.getElementById("dayManageBar");
-            if (!c.days.length) { bar.innerHTML = ""; return; }
+            if (!currentDays.length) { bar.innerHTML = ""; return; }
             bar.innerHTML = `
-        <button class="btn btn-sm" id="btnRenameDay">✏️ Renombrar día</button>
-        <button class="btn btn-sm" id="btnMoveDayUp">↑ Mover</button>
-        <button class="btn btn-sm" id="btnMoveDayDown">↓ Mover</button>
-        <button class="btn btn-sm" id="btnSaveDayTpl">💾 Guardar como plantilla</button>
-        <button class="btn btn-sm" id="btnApplyDayTpl">📥 Aplicar plantilla a este día</button>
-        <button class="btn btn-sm btn-danger" id="btnDeleteDay">🗑 Eliminar día</button>
-      `;
+            <button class="btn btn-sm" id="btnRenameDay">✏️ Renombrar día</button>
+            <button class="btn btn-sm" id="btnMoveDayUp">↑ Mover</button>
+            <button class="btn btn-sm" id="btnMoveDayDown">↓ Mover</button>
+            <button class="btn btn-sm" id="btnSaveDayTpl">💾 Guardar como plantilla</button>
+            <button class="btn btn-sm" id="btnApplyDayTpl">📥 Aplicar plantilla a este día</button>
+            <button class="btn btn-sm btn-danger" id="btnDeleteDay">🗑 Eliminar día</button>
+          `;
         }
 
         /* ---------------------------------------------------------
            11. PANTALLA: CLIENTE — TABLA DE EJERCICIOS DEL DÍA
            --------------------------------------------------------- */
-        function currentDay(c) { return c.days.find(d => d.id === c.activeDayId) || null; }
+        function currentDay(c) {
+            return getDays(c).find(d => d.id === c.activeDayId) || null;
+        }
 
         function dayVolume(day) {
             return day.ejercicios.reduce((sum, ex) => {
@@ -1897,80 +1920,80 @@
 
         function exerciseRowHTML(ex) {
             return `
-      <tr data-id="${ex.id}" class="${ex.completado ? 'completed-row' : ''}">
-        <td class="col-check"><input type="checkbox" class="chk-complete" ${ex.completado ? "checked" : ""} aria-label="Marcar ${escapeAttr(ex.ejercicio)} como completado"></td>
-        <td><select class="sel-grupo" aria-label="Grupo muscular">${groupOptionsHTML(ex.grupo)}</select></td>
-        <td>
-          <input type="text" class="inp-ejercicio" list="dl-${slug(ex.grupo)}" value="${escapeAttr(ex.ejercicio)}" aria-label="Nombre del ejercicio">
-          <span class="badge-progress" hidden>↑ Subir peso</span>
-        </td>
-        <td><input type="number" min="1" class="inp-series" value="${ex.series}" aria-label="Series"></td>
-        <td><input type="text" class="inp-reps" value="${escapeAttr(ex.reps)}" aria-label="Repeticiones"></td>
-        <td class="col-timer">
-          <div style="display:flex;align-items:center;gap:4px;">
-            <input type="number" min="0" class="inp-descanso" value="${ex.descanso}" style="width:56px;" aria-label="Descanso en segundos">s
-          </div>
-          <div class="timer" data-remaining="${ex.descanso}">
-            <span class="timer-display">${fmtTime(ex.descanso)}</span>
-            <button type="button" class="btn-timer-start" aria-label="Iniciar descanso" title="Iniciar">▶</button>
-            <button type="button" class="btn-timer-pause" aria-label="Pausar descanso" title="Pausar">⏸</button>
-            <button type="button" class="btn-timer-reset" aria-label="Reiniciar descanso" title="Reiniciar">↺</button>
-          </div>
-        </td>
-        <td><input type="number" min="0" max="10" class="inp-rir" value="${escapeAttr(ex.rir || '')}" placeholder="RIR" aria-label="Repeticiones en Reserva" style="width:50px;text-align:center;"></td>
-        <td><input type="number" min="0" step="0.5" class="inp-peso" placeholder="kg" value="${ex.peso}" aria-label="Peso usado en kilogramos"></td>
-        <td><input type="text" class="inp-notas" placeholder="Notas" value="${escapeAttr(ex.notas)}" aria-label="Notas"></td>
-        <td class="col-actions no-print">
-          <button type="button" class="btn btn-icon btn-dup" title="Duplicar" aria-label="Duplicar ejercicio">⧉</button>
-          <button type="button" class="btn btn-icon btn-up" title="Subir" aria-label="Subir ejercicio">↑</button>
-          <button type="button" class="btn btn-icon btn-down" title="Bajar" aria-label="Bajar ejercicio">↓</button>
-          <button type="button" class="btn btn-icon btn-del" title="Eliminar" aria-label="Eliminar ejercicio">🗑</button>
-        </td>
-      </tr>`;
+          <tr data-id="${ex.id}" class="${ex.completado ? 'completed-row' : ''}">
+            <td class="col-check"><input type="checkbox" class="chk-complete" ${ex.completado ? "checked" : ""} aria-label="Marcar ${escapeAttr(ex.ejercicio)} como completado"></td>
+            <td><select class="sel-grupo" aria-label="Grupo muscular">${groupOptionsHTML(ex.grupo)}</select></td>
+            <td>
+              <input type="text" class="inp-ejercicio" list="dl-${slug(ex.grupo)}" value="${escapeAttr(ex.ejercicio)}" aria-label="Nombre del ejercicio">
+              <span class="badge-progress" hidden>↑ Subir peso</span>
+            </td>
+            <td><input type="number" min="1" class="inp-series" value="${ex.series}" aria-label="Series"></td>
+            <td><input type="text" class="inp-reps" value="${escapeAttr(ex.reps)}" aria-label="Repeticiones"></td>
+            <td class="col-timer">
+              <div style="display:flex;align-items:center;gap:4px;">
+                <input type="number" min="0" class="inp-descanso" value="${ex.descanso}" style="width:56px;" aria-label="Descanso en segundos">s
+              </div>
+              <div class="timer" data-remaining="${ex.descanso}">
+                <span class="timer-display">${fmtTime(ex.descanso)}</span>
+                <button type="button" class="btn-timer-start" aria-label="Iniciar descanso" title="Iniciar">▶</button>
+                <button type="button" class="btn-timer-pause" aria-label="Pausar descanso" title="Pausar">⏸</button>
+                <button type="button" class="btn-timer-reset" aria-label="Reiniciar descanso" title="Reiniciar">↺</button>
+              </div>
+            </td>
+            <td><input type="number" min="0" max="10" class="inp-rir" value="${escapeAttr(ex.rir || '')}" placeholder="RIR" aria-label="Repeticiones en Reserva" style="width:50px;text-align:center;"></td>
+            <td><input type="number" min="0" step="0.5" class="inp-peso" placeholder="kg" value="${ex.peso}" aria-label="Peso usado en kilogramos"></td>
+            <td><input type="text" class="inp-notas" placeholder="Notas" value="${escapeAttr(ex.notas)}" aria-label="Notas"></td>
+            <td class="col-actions no-print">
+              <button type="button" class="btn btn-icon btn-dup" title="Duplicar" aria-label="Duplicar ejercicio">⧉</button>
+              <button type="button" class="btn btn-icon btn-up" title="Subir" aria-label="Subir ejercicio">↑</button>
+              <button type="button" class="btn btn-icon btn-down" title="Bajar" aria-label="Bajar ejercicio">↓</button>
+              <button type="button" class="btn btn-icon btn-del" title="Eliminar" aria-label="Eliminar ejercicio">🗑</button>
+            </td>
+          </tr>`;
         }
 
         function renderDayPanel() {
             const c = activeClient(); if (!c) return;
-            const panel = document.getElementById("dayPanel");
             const day = currentDay(c);
+            const panel = document.getElementById("dayPanel");
             if (!day) {
-                panel.innerHTML = `<div class="empty-state">Este alumno todavía no tiene días de entrenamiento. Usa "➕" en las pestañas para crear el primero, o aplica una plantilla completa arriba. ☝️</div>`;
+                panel.innerHTML = `<div class="empty-state">Este alumno todavía no tiene días de entrenamiento para esta semana. Usa "➕" en las pestañas para crear el primero, o aplica una plantilla completa arriba. ☝️</div>`;
                 return;
             }
             const notes = ensureNotesFor(c, day.id);
             panel.innerHTML = `
-        <div class="day-print-section">
-          <h3 style="margin-bottom:10px;">${escapeAttr(day.nombre)}</h3>
-          <div class="table-toolbar no-print">
-            <div class="search-box"><input type="text" id="searchExercise" placeholder="Buscar ejercicio o grupo…" aria-label="Buscar ejercicio"></div>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-primary btn-sm" id="btnAddExercise">➕ Añadir ejercicio</button>
-            </div>
-          </div>
-          <div class="table-scroll">
-            <table class="exercise-table" aria-label="Ejercicios de ${escapeAttr(day.nombre)}">
-              <thead>
-                <tr>
-                  <th class="col-check">Ok</th><th>Grupo</th><th>Ejercicio</th><th>Series</th><th>Reps.</th>
-                  <th>Descanso</th><th>RIR</th><th>Peso</th><th>Notas</th><th class="col-actions">Acciones</th>
-                </tr>
-              </thead>
-              <tbody id="tbodyExercises">${day.ejercicios.map(exerciseRowHTML).join("")}</tbody>
-            </table>
-          </div>
-          ${day.ejercicios.length === 0 ? '<div class="empty-state">Este día no tiene ejercicios todavía. Usa "➕ Añadir ejercicio".</div>' : ''}
-          <div class="day-footer-row no-print">
-            <div style="font-size:12.5px;color:var(--muted);">
-              Volumen del día: <strong style="color:var(--text);">${Math.round(dayVolume(day)).toLocaleString("es-CL")} kg</strong>
-              &nbsp;·&nbsp; Tiempo estimado: <strong style="color:var(--text);">${Math.round(dayEstimatedSeconds(day) / 60)} min</strong>
-            </div>
-          </div>
-          <div class="notes-grid">
-            <div class="field"><label for="note-molestias">Molestias</label><textarea id="note-molestias" data-field="molestias">${escapeAttr(notes.molestias)}</textarea></div>
-            <div class="field"><label for="note-mejoras">Mejoras técnicas</label><textarea id="note-mejoras" data-field="mejoras">${escapeAttr(notes.mejoras)}</textarea></div>
-            <div class="field"><label for="note-peso">Peso recomendado próxima sesión</label><textarea id="note-peso" data-field="pesoRecomendado">${escapeAttr(notes.pesoRecomendado)}</textarea></div>
-          </div>
-        </div>`;
+            <div class="day-print-section">
+              <h3 style="margin-bottom:10px;">${escapeAttr(day.nombre)}</h3>
+              <div class="table-toolbar no-print">
+                <div class="search-box"><input type="text" id="searchExercise" placeholder="Buscar ejercicio o grupo…" aria-label="Buscar ejercicio"></div>
+                <div style="display:flex;gap:8px;">
+                  <button class="btn btn-primary btn-sm" id="btnAddExercise">➕ Añadir ejercicio</button>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="exercise-table" aria-label="Ejercicios de ${escapeAttr(day.nombre)}">
+                  <thead>
+                    <tr>
+                      <th class="col-check">Ok</th><th>Grupo</th><th>Ejercicio</th><th>Series</th><th>Reps.</th>
+                      <th>Descanso</th><th>RIR</th><th>Peso</th><th>Notas</th><th class="col-actions">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyExercises">${day.ejercicios.map(exerciseRowHTML).join("")}</tbody>
+                </table>
+              </div>
+              ${day.ejercicios.length === 0 ? '<div class="empty-state">Este día no tiene ejercicios todavía. Usa "➕ Añadir ejercicio".</div>' : ''}
+              <div class="day-footer-row no-print">
+                <div style="font-size:12.5px;color:var(--muted);">
+                  Volumen del día: <strong style="color:var(--text);">${Math.round(dayVolume(day)).toLocaleString("es-CL")} kg</strong>
+                  &nbsp;·&nbsp; Tiempo estimado: <strong style="color:var(--text);">${Math.round(dayEstimatedSeconds(day) / 60)} min</strong>
+                </div>
+              </div>
+              <div class="notes-grid">
+                <div class="field"><label for="note-molestias">Molestias</label><textarea id="note-molestias" data-field="molestias">${escapeAttr(notes.molestias)}</textarea></div>
+                <div class="field"><label for="note-mejoras">Mejoras técnicas</label><textarea id="note-mejoras" data-field="mejoras">${escapeAttr(notes.mejoras)}</textarea></div>
+                <div class="field"><label for="note-peso">Peso recomendado próxima sesión</label><textarea id="note-peso" data-field="pesoRecomendado">${escapeAttr(notes.pesoRecomendado)}</textarea></div>
+              </div>
+            </div>`;
             updateProgressionBadges();
         }
 
@@ -2011,10 +2034,10 @@
                 { label: "Volumen del día", value: `${volume.toLocaleString("es-CL")}`, sub: "kg" },
             ];
             document.getElementById("dashGrid").innerHTML = stats.map(s => `
-        <div class="stat">
-          <span class="stat-label">${s.label}</span>
-          <span class="stat-value">${s.value} ${s.sub ? `<small>${s.sub}</small>` : ""}</span>
-        </div>`).join("");
+            <div class="stat">
+              <span class="stat-label">${s.label}</span>
+              <span class="stat-value">${s.value} ${s.sub ? `<small>${s.sub}</small>` : ""}</span>
+            </div>`).join("");
 
             const pillWrap = document.getElementById("weekPillGroup");
             let pills = "";
@@ -2031,14 +2054,14 @@
             for (let w = 1; w <= c.semanas; w++) {
                 const status = c.weeks[w] || "pendiente";
                 html += `
-        <div class="week-card">
-          <h4>Semana ${w}</h4>
-          <select class="status-select" data-week="${w}" data-status="${status}">
-            <option value="pendiente" ${status === 'pendiente' ? 'selected' : ''}>Pendiente</option>
-            <option value="progreso" ${status === 'progreso' ? 'selected' : ''}>En progreso</option>
-            <option value="completada" ${status === 'completada' ? 'selected' : ''}>Completada</option>
-          </select>
-        </div>`;
+            <div class="week-card">
+              <h4>Semana ${w}</h4>
+              <select class="status-select" data-week="${w}" data-status="${status}">
+                <option value="pendiente" ${status === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+                <option value="progreso" ${status === 'progreso' ? 'selected' : ''}>En progreso</option>
+                <option value="completada" ${status === 'completada' ? 'selected' : ''}>Completada</option>
+              </select>
+            </div>`;
             }
             grid.innerHTML = html;
         }
@@ -2158,8 +2181,9 @@
             drawBarChart(document.getElementById("chartWeekly"), Array.from({ length: TOTAL_WEEKS }, (_, i) => "S" + (i + 1)), weeklyCount, getCssVar("--primary"));
             drawBarChart(document.getElementById("chartVolume"), Array.from({ length: TOTAL_WEEKS }, (_, i) => "S" + (i + 1)), weeklyVolume.map(v => Math.round(v)), getCssVar("--accent"));
 
-            const completedByDay = c.days.map((d, i) => d.ejercicios.filter(e => e.completado).length);
-            drawBarChart(document.getElementById("chartCompleted"), c.days.map((d, i) => "D" + (i + 1)), completedByDay, getCssVar("--warning"));
+            const currentDays = getDays(c);
+            const completedByDay = currentDays.map((d, i) => d.ejercicios.filter(e => e.completado).length);
+            drawBarChart(document.getElementById("chartCompleted"), currentDays.map((d, i) => "D" + (i + 1)), completedByDay, getCssVar("--warning"));
 
             const groupCounts = state.library.groups.map(g => c.history.filter(h => h.grupo === g && h.completado).length);
             const palette = ["#7C8CFF", "#3DDC97", "#FFC163", "#FF6B6B", "#B18CFF", "#4ADEDE", "#F783C4", "#9AD16B", "#FFA45C", "#6E9BFF", "#5FD0C0"];
@@ -2172,11 +2196,11 @@
             const rows = [...c.history].sort((a, b) => (b.fecha).localeCompare(a.fecha));
             document.getElementById("histCount").textContent = rows.length + " registros";
             body.innerHTML = rows.slice(0, 200).map(h => `
-        <tr>
-          <td>${h.fecha}</td><td>S${h.semana}</td><td>${escapeAttr(h.diaNombre || "")}</td>
-          <td>${escapeAttr(h.ejercicio)}</td><td>${h.peso || "—"} kg</td><td>${h.series}</td>
-          <td>${escapeAttr(h.reps)}</td><td>${h.completado ? "✅ Completado" : "—"}</td>
-        </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px;">Aún no hay registros. Marca ejercicios como completados para comenzar el historial.</td></tr>`;
+            <tr>
+              <td>${h.fecha}</td><td>S${h.semana}</td><td>${escapeAttr(h.diaNombre || "")}</td>
+              <td>${escapeAttr(h.ejercicio)}</td><td>${h.peso || "—"} kg</td><td>${h.series}</td>
+              <td>${escapeAttr(h.reps)}</td><td>${h.completado ? "✅ Completado" : "—"}</td>
+            </tr>`).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px;">Aún no hay registros. Marca ejercicios como completados para comenzar el historial.</td></tr>`;
         }
 
         function applyTheme() {
@@ -2213,21 +2237,21 @@
         function modalNewClient() {
             const planOptions = state.templates.plans.map(t => `<option value="${t.id}">${escapeAttr(t.nombre)}</option>`).join("");
             openModal(`
-        <h3>➕ Nuevo alumno</h3>
-        <div class="field"><label for="mNombre">Nombre del alumno</label><input id="mNombre" type="text" autocomplete="off" placeholder="Ej: Camila Rojas"></div>
-        <div class="field"><label for="mObjetivo">Objetivo</label><input id="mObjetivo" type="text" autocomplete="off" placeholder="Ej: Tonificar y bajar grasa"></div>
-        <div class="field"><label for="mSemanas">Duración del plan (semanas)</label><input id="mSemanas" type="number" min="1" max="52" value="8"></div>
-        <div class="field"><label for="mPlan">Empezar con</label>
-          <select id="mPlan">
-            <option value="">Plan en blanco (armo los días yo)</option>
-            ${planOptions}
-          </select>
-        </div>
-        <div class="modal-actions">
-          <button class="btn" id="mCancel">Cancelar</button>
-          <button class="btn btn-primary" id="mCreate">Crear alumno</button>
-        </div>
-      `);
+            <h3>➕ Nuevo alumno</h3>
+            <div class="field"><label for="mNombre">Nombre del alumno</label><input id="mNombre" type="text" autocomplete="off" placeholder="Ej: Camila Rojas"></div>
+            <div class="field"><label for="mObjetivo">Objetivo</label><input id="mObjetivo" type="text" autocomplete="off" placeholder="Ej: Tonificar y bajar grasa"></div>
+            <div class="field"><label for="mSemanas">Duración del plan (semanas)</label><input id="mSemanas" type="number" min="1" max="52" value="8"></div>
+            <div class="field"><label for="mPlan">Empezar con</label>
+              <select id="mPlan">
+                <option value="">Plan en blanco (armo los días yo)</option>
+                ${planOptions}
+              </select>
+            </div>
+            <div class="modal-actions">
+              <button class="btn" id="mCancel">Cancelar</button>
+              <button class="btn btn-primary" id="mCreate">Crear alumno</button>
+            </div>
+          `);
             document.getElementById("mCancel").onclick = closeModal;
             document.getElementById("mCreate").onclick = () => {
                 const nombre = document.getElementById("mNombre").value.trim() || "Nuevo alumno";
@@ -2238,9 +2262,20 @@
                 c.objetivo = objetivo; c.semanas = semanas; c.weeks = weeksObjectFor(semanas);
                 if (planId) {
                     const tpl = state.templates.plans.find(t => t.id === planId);
-                    if (tpl) c.days = tpl.dias.map(dayFromTemplate);
+                    if (tpl) {
+                        const baseDays = tpl.dias.map(dayFromTemplate);
+                        for (let w = 1; w <= semanas; w++) {
+                            c.daysByWeek[w] = JSON.parse(JSON.stringify(baseDays));
+                            if (w !== 1) {
+                                c.daysByWeek[w].forEach(d => {
+                                    d.id = uid("day");
+                                    d.ejercicios.forEach(ex => ex.id = uid("ex"));
+                                });
+                            }
+                        }
+                    }
                 }
-                c.activeDayId = c.days[0]?.id || null;
+                c.activeDayId = c.daysByWeek && c.daysByWeek[1] && c.daysByWeek[1].length ? c.daysByWeek[1][0].id : null;
                 state.clients[c.id] = c;
                 closeModal();
                 openClient(c.id);
@@ -2250,13 +2285,13 @@
 
         function modalTextPrompt(title, label, initialValue, onConfirm) {
             openModal(`
-        <h3>${title}</h3>
-        <div class="field"><label for="mVal">${label}</label><input id="mVal" type="text" value="${escapeAttr(initialValue || "")}"></div>
-        <div class="modal-actions">
-          <button class="btn" id="mCancel">Cancelar</button>
-          <button class="btn btn-primary" id="mOk">Guardar</button>
-        </div>
-      `);
+            <h3>${title}</h3>
+            <div class="field"><label for="mVal">${label}</label><input id="mVal" type="text" value="${escapeAttr(initialValue || "")}"></div>
+            <div class="modal-actions">
+              <button class="btn" id="mCancel">Cancelar</button>
+              <button class="btn btn-primary" id="mOk">Guardar</button>
+            </div>
+          `);
             document.getElementById("mCancel").onclick = closeModal;
             document.getElementById("mOk").onclick = () => {
                 const val = document.getElementById("mVal").value.trim();
@@ -2280,12 +2315,12 @@
             const c = activeClient(); const day = currentDay(c); if (!day) return;
             if (!state.templates.days.length) { showToast("Aún no tienes plantillas de día guardadas"); return; }
             const rows = state.templates.days.map(t => `
-        <div class="tpl-row">
-          <div><div class="tpl-name">${escapeAttr(t.nombre)}</div><div class="tpl-meta">${t.ejercicios.length} ejercicio(s)</div></div>
-          <div class="tpl-actions"><button class="btn btn-sm btn-primary" data-id="${t.id}">Usar</button></div>
-        </div>`).join("");
+            <div class="tpl-row">
+              <div><div class="tpl-name">${escapeAttr(t.nombre)}</div><div class="tpl-meta">${t.ejercicios.length} ejercicio(s)</div></div>
+              <div class="tpl-actions"><button class="btn btn-sm btn-primary" data-id="${t.id}">Usar</button></div>
+            </div>`).join("");
             openModal(`<h3>📥 Aplicar plantilla a "${escapeAttr(day.nombre)}"</h3><div class="tpl-list">${rows}</div>
-        <div class="modal-actions"><button class="btn" id="mCancel">Cancelar</button></div>`);
+            <div class="modal-actions"><button class="btn" id="mCancel">Cancelar</button></div>`);
             document.getElementById("mCancel").onclick = closeModal;
             document.querySelectorAll("#modalBox [data-id]").forEach(btn => {
                 btn.onclick = () => {
@@ -2299,9 +2334,14 @@
         }
 
         function modalSavePlanTpl() {
-            const c = activeClient(); if (!c || !c.days.length) { showToast("Este alumno no tiene días para guardar"); return; }
+            const c = activeClient(); const currentDays = getDays(c);
+            if (!c || !currentDays.length) { showToast("Este alumno no tiene días para guardar"); return; }
             modalTextPrompt("💾 Guardar plan como plantilla", "Nombre de la plantilla", c.nombre + " — plan", (nombre) => {
-                state.templates.plans.push({ id: uid("tpl"), nombre, dias: c.days.map(d => ({ nombre: d.nombre, ejercicios: d.ejercicios.map(e => ({ grupo: e.grupo, ejercicio: e.ejercicio, series: e.series, reps: e.reps, descanso: e.descanso })) })) });
+                state.templates.plans.push({
+                    id: uid("tpl"),
+                    nombre,
+                    dias: currentDays.map(d => ({ nombre: d.nombre, ejercicios: d.ejercicios.map(e => ({ grupo: e.grupo, ejercicio: e.ejercicio, series: e.series, reps: e.reps, descanso: e.descanso })) }))
+                });
                 saveState();
                 showToast("💾 Plantilla de plan guardada");
             });
@@ -2311,22 +2351,34 @@
             if (!state.templates.plans.length) { showToast("Aún no tienes plantillas de plan guardadas"); return; }
             const c = activeClient(); if (!c) return;
             const rows = state.templates.plans.map(t => `
-        <div class="tpl-row">
-          <div><div class="tpl-name">${escapeAttr(t.nombre)}</div><div class="tpl-meta">${t.dias.length} día(s)</div></div>
-          <div class="tpl-actions"><button class="btn btn-sm btn-primary" data-id="${t.id}">Usar</button></div>
-        </div>`).join("");
+            <div class="tpl-row">
+              <div><div class="tpl-name">${escapeAttr(t.nombre)}</div><div class="tpl-meta">${t.dias.length} día(s)</div></div>
+              <div class="tpl-actions"><button class="btn btn-sm btn-primary" data-id="${t.id}">Usar</button></div>
+            </div>`).join("");
             openModal(`<h3>📥 Usar una plantilla completa</h3><div class="tpl-list">${rows}</div>
-        <div class="modal-actions"><button class="btn" id="mCancel">Cancelar</button></div>`);
+            <div class="modal-actions"><button class="btn" id="mCancel">Cancelar</button></div>`);
             document.getElementById("mCancel").onclick = closeModal;
             document.querySelectorAll("#modalBox [data-id]").forEach(btn => {
                 btn.onclick = () => {
                     const t = state.templates.plans.find(x => x.id === btn.dataset.id);
                     if (!confirm(`Esto reemplaza TODOS los días actuales de ${c.nombre} por los de "${t.nombre}". ¿Continuar?`)) return;
-                    c.days = t.dias.map(dayFromTemplate);
+
+                    const baseDays = t.dias.map(dayFromTemplate);
+                    c.daysByWeek = {};
+                    for (let w = 1; w <= c.semanas; w++) {
+                        c.daysByWeek[w] = JSON.parse(JSON.stringify(baseDays));
+                        if (w !== 1) {
+                            c.daysByWeek[w].forEach(d => {
+                                d.id = uid("day");
+                                d.ejercicios.forEach(ex => ex.id = uid("ex"));
+                            });
+                        }
+                    }
+                    c.activeDayId = c.daysByWeek[1][0]?.id || null;
+                    c.currentWeek = 1;
                     c.notes = {};
-                    c.activeDayId = c.days[0]?.id || null;
                     saveState(); closeModal(); renderClientScreen();
-                    showToast("📥 Plantilla de plan aplicada");
+                    showToast("📥 Plantilla de plan aplicada a todas las semanas");
                 };
             });
         }
@@ -2354,11 +2406,25 @@
                 if (actBtn.dataset.act === "duplicate") {
                     const copy = JSON.parse(JSON.stringify(c));
                     copy.id = uid("cli"); copy.nombre = c.nombre + " (copia)";
-                    copy.days = c.days.map(d => ({ ...d, id: uid("day"), ejercicios: d.ejercicios.map(ex => ({ ...ex, id: uid("ex"), completado: false })) }));
+
+                    if (copy.daysByWeek) {
+                        Object.keys(copy.daysByWeek).forEach(w => {
+                            copy.daysByWeek[w].forEach(d => {
+                                d.id = uid("day");
+                                d.ejercicios.forEach(ex => { ex.id = uid("ex"); ex.completado = false; });
+                            });
+                        });
+                    }
                     copy.notes = {}; copy.history = [];
-                    copy.days.forEach((d, i) => { copy.notes[d.id] = { molestias: "", mejoras: "", pesoRecomendado: "" }; });
-                    copy.activeDayId = copy.days[0]?.id || null;
+                    if (copy.daysByWeek) {
+                        Object.keys(copy.daysByWeek).forEach(w => {
+                            copy.daysByWeek[w].forEach(d => {
+                                copy.notes[d.id] = { molestias: "", mejoras: "", pesoRecomendado: "" };
+                            });
+                        });
+                    }
                     copy.currentWeek = 1; copy.weeks = weeksObjectFor(copy.semanas);
+                    copy.activeDayId = copy.daysByWeek && copy.daysByWeek[1] && copy.daysByWeek[1].length ? copy.daysByWeek[1][0].id : null;
                     state.clients[copy.id] = copy;
                     saveState(); renderHome(); showToast("⧉ Alumno duplicado");
                     return;
@@ -2423,7 +2489,8 @@
                 const c = activeClient();
                 modalTextPrompt("➕ Nuevo día", "Nombre del día (ej: Tren superior)", "", (nombre) => {
                     const d = blankDay(nombre);
-                    c.days.push(d); c.activeDayId = d.id;
+                    getDays(c).push(d);
+                    c.activeDayId = d.id;
                     saveState(); renderDayTabs(); renderDayPanel(); renderDashboard(); renderStats();
                     showToast("➕ Día añadido");
                 });
@@ -2437,18 +2504,23 @@
                 return;
             }
             if (e.target.id === "btnMoveDayUp" || e.target.id === "btnMoveDayDown") {
-                const c = activeClient(); const idx = c.days.findIndex(d => d.id === c.activeDayId);
+                const c = activeClient(); const days = getDays(c);
+                const idx = days.findIndex(d => d.id === c.activeDayId);
                 const dir = e.target.id === "btnMoveDayUp" ? -1 : 1;
                 const j = idx + dir;
-                if (j >= 0 && j < c.days.length) { [c.days[idx], c.days[j]] = [c.days[j], c.days[idx]]; saveState(); renderDayTabs(); renderDayPanel(); }
+                if (j >= 0 && j < days.length) {
+                    [days[idx], days[j]] = [days[j], days[idx]];
+                    saveState(); renderDayTabs(); renderDayPanel();
+                }
                 return;
             }
             if (e.target.id === "btnDeleteDay") {
                 const c = activeClient(); const day = currentDay(c); if (!day) return;
-                if (confirm(`¿Eliminar el día "${day.nombre}" con todos sus ejercicios?`)) {
-                    c.days = c.days.filter(d => d.id !== day.id);
+                if (confirm(`¿Eliminar el día "${day.nombre}" con todos sus ejercicios de esta semana?`)) {
+                    c.daysByWeek[c.currentWeek] = getDays(c).filter(d => d.id !== day.id);
                     delete c.notes[day.id];
-                    c.activeDayId = c.days[0]?.id || null;
+                    const updatedDays = getDays(c);
+                    c.activeDayId = updatedDays[0]?.id || null;
                     saveState(); renderDayTabs(); renderDayPanel(); renderDashboard(); renderStats();
                     showToast("🗑 Día eliminado");
                 }
@@ -2468,7 +2540,11 @@
             if (weekPill) {
                 const c = activeClient();
                 c.currentWeek = parseInt(weekPill.dataset.week, 10);
-                saveState(); renderDashboard(); return;
+
+                const currentDays = getDays(c);
+                c.activeDayId = currentDays.length > 0 ? currentDays[0].id : null;
+
+                saveState(); renderDayTabs(); renderDayPanel(); renderDashboard(); return;
             }
 
             if (e.target.id === "btnExportJSON") { exportClientJSON(); return; }
@@ -2516,9 +2592,26 @@
                 if (key) { c[key] = e.target.value; if (key === "nombre") document.getElementById("brandSub").textContent = "Plan de " + c.nombre; saveState(); }
                 if (e.target.id === "pSemanas") {
                     const n = Math.max(1, parseInt(e.target.value, 10) || 8);
+                    const oldSemanas = c.semanas;
                     c.semanas = n;
                     c.weeks = Object.assign(weeksObjectFor(n), c.weeks);
-                    if (c.currentWeek > n) c.currentWeek = n;
+
+                    getDays(c);
+                    for (let w = oldSemanas + 1; w <= n; w++) {
+                        if (!c.daysByWeek[w]) {
+                            c.daysByWeek[w] = JSON.parse(JSON.stringify(c.daysByWeek[oldSemanas] || []));
+                            c.daysByWeek[w].forEach(d => {
+                                d.id = uid("day");
+                                d.ejercicios.forEach(ex => ex.id = uid("ex"));
+                            });
+                        }
+                    }
+
+                    if (c.currentWeek > n) {
+                        c.currentWeek = n;
+                        c.activeDayId = getDays(c)[0]?.id || null;
+                        renderDayTabs(); renderDayPanel();
+                    }
                     saveState(); renderDashboard(); renderWeeksPanel(); renderStats();
                 }
                 document.getElementById("pFin").value = computeFin(c);
@@ -2741,6 +2834,7 @@
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ unit: "pt", format: "a4" });
             const pageW = doc.internal.pageSize.getWidth();
+            const currentDaysToExport = getDays(c);
 
             /* ---- Portada / resumen ---- */
             doc.setFillColor(...PDF_INK);
@@ -2767,7 +2861,7 @@
                     ["Edad", c.edad || "—", "Objetivo", c.objetivo || "—"],
                     ["Peso", (c.peso ? c.peso + " kg" : "—"), "Inicio", c.inicio || "—"],
                     ["Altura", (c.altura ? c.altura + " cm" : "—"), "Fin estimado", computeFin(c)],
-                    ["Duración", c.semanas + " semanas", "Semana actual", `${c.currentWeek} / ${c.semanas}`],
+                    ["Duración", c.semanas + " semanas", "Semana del PDF", `Semana ${c.currentWeek}`],
                 ],
             });
             y = doc.lastAutoTable.finalY + 22;
@@ -2792,7 +2886,7 @@
             }
 
             /* ---- Un día por página ---- */
-            c.days.forEach((d, i) => {
+            currentDaysToExport.forEach((d, i) => {
                 doc.addPage();
                 doc.setFillColor(...PDF_LIGHT);
                 doc.rect(0, 0, pageW, 46, "F");
