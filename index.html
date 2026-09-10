@@ -831,10 +831,6 @@
             min-width: 190px !important;
         }
 
-        .inp-notas {
-            min-width: 130px !important;
-        }
-
         .col-check {
             text-align: center;
             width: 38px;
@@ -1439,23 +1435,24 @@
         const timerIntervals = {};
         let saveTimeout = null;
         let state = null;
+        let REPDB_DATA = [];
+
+        // Helper para obtener la imagen desde los datos cargados del JSON
+        function obtenerImagenEjercicio(nombreEs) {
+            if (!REPDB_DATA || REPDB_DATA.length === 0) return "https://via.placeholder.com/400x300.png?text=Cargando+base+de+datos...";
+
+            const ejercicio = REPDB_DATA.find(ex => ex.name_es && ex.name_es.toLowerCase() === nombreEs.toLowerCase());
+
+            if (ejercicio && ejercicio.images && ejercicio.images.flat) {
+                const imgPath = ejercicio.images.flat.peak || ejercicio.images.flat.main || ejercicio.images.flat.start;
+                if (imgPath) return './' + imgPath;
+            }
+            return "https://via.placeholder.com/400x300.png?text=Imagen+no+disponible";
+        }
 
         const MUSCLE_GROUPS = ["Glúteos", "Cuádriceps", "Femorales", "Espalda", "Pecho", "Hombros", "Tríceps", "Bíceps", "Abdomen", "Pantorrillas", "Cardio"];
 
-        const DEFAULT_EXERCISE_DB = {
-            "Glúteos": ["Hip Thrust en máquina", "Hip Thrust con barra", "Hip Thrust en banco", "Glute Drive", "Patada de glúteo en polea", "Patada de glúteo en máquina", "Puente de glúteo", "Peso muerto sumo", "Zancada caminando", "Búlgara asistida", "Sentadilla sumo con mancuerna", "Step up con mancuernas", "Abducción de cadera en máquina", "Abducción en polea", "Kickback en polea baja"],
-            "Cuádriceps": ["Sentadilla libre", "Sentadilla Smith", "Sentadilla goblet", "Sentadilla búlgara", "Prensa 45°", "Prensa horizontal", "Prensa unilateral", "Extensión de piernas", "Zancada con mancuernas", "Sentadilla hack", "Sentadilla sissy", "Step up", "Sentadilla frontal", "Sentadilla a banco", "Wall sit"],
-            "Femorales": ["Peso muerto rumano", "Peso muerto rumano con mancuernas", "Peso muerto convencional", "Curl femoral sentado", "Curl femoral tumbado", "Curl femoral de pie", "Buenos días", "Puente de glúteo a una pierna", "Good morning con barra", "Nordic curl asistido", "Peso muerto piernas rígidas", "Curl nórdico", "Zancada reversa", "Swing con kettlebell", "Hiperextensión"],
-            "Espalda": ["Jalón al pecho abierto", "Jalón al pecho neutro", "Jalón al pecho cerrado", "Remo sentado en polea", "Remo con barra T", "Remo con mancuerna a un brazo", "Remo en máquina", "Pull-over en polea", "Dominadas asistidas", "Remo invertido", "Face pull", "Peso muerto", "Remo Pendlay", "Encogimientos con barra", "Extensión lumbar"],
-            "Pecho": ["Press de banca plano", "Press de banca inclinado", "Press de pecho en máquina", "Press inclinado con mancuernas", "Aperturas con mancuernas", "Aperturas en máquina (Peck Deck)", "Cruces en polea", "Fondos en paralelas", "Press declinado", "Pullover con mancuerna", "Press en Smith", "Flexiones de pecho", "Press unilateral en polea", "Chest press en máquina", "Pec deck inverso"],
-            "Hombros": ["Press de hombros con mancuernas", "Press de hombros en máquina", "Press militar con barra", "Elevación lateral", "Elevación frontal", "Pájaro (deltoide posterior)", "Face pull", "Press Arnold", "Elevación lateral en polea", "Remo al mentón", "Press tras nuca", "Elevación posterior en máquina", "Encogimientos de hombros", "Press en Smith", "Elevación lateral con banda"],
-            "Tríceps": ["Extensión de tríceps con cuerda", "Extensión de tríceps con barra", "Extensión unilateral en polea", "Press francés", "Press cerrado en banca", "Fondos en banco", "Patada de tríceps", "Extensión sobre la cabeza con mancuerna", "Extensión en máquina", "Kickback en polea", "Jalón de tríceps invertido", "Fondos en paralelas", "Extensión con barra Z", "Press JM", "Extensión con cuerda por encima de la cabeza"],
-            "Bíceps": ["Curl con barra", "Curl con mancuernas", "Curl martillo", "Curl predicador", "Curl concentrado", "Curl en polea baja", "Curl con barra Z", "Curl 21s", "Curl araña", "Curl con banda", "Curl inclinado con mancuernas", "Curl en máquina", "Curl con cuerda", "Curl cruzado en polea alta", "Curl Zottman"],
-            "Abdomen": ["Crunch en máquina", "Crunch abdominal", "Plancha", "Elevación de piernas colgado", "Elevación de piernas en banco", "Rueda abdominal", "Crunch en polea alta", "Bicicleta abdominal", "Plancha lateral", "Mountain climbers", "Russian twist", "Elevación de rodillas colgado", "Sit up", "Dead bug", "Hollow hold"],
-            "Pantorrillas": ["Elevación de talones de pie", "Elevación de talones sentado", "Elevación de talones en prensa", "Elevación de talones unilateral", "Elevación de talones en Smith", "Burro (donkey calf raise)", "Salto a la cuerda", "Elevación de talones en escalón", "Caminata en punta de pies", "Elevación de talones con mancuerna", "Elevación de talones en máquina", "Sentadilla de pantorrilla isométrica", "Elevación de talones con barra", "Salto con contramovimiento", "Elevación de talones a una pierna"],
-            "Cardio": ["Caminadora", "Bicicleta estática", "Elíptica", "Escaladora (StairMaster)", "Remo (máquina)", "Bicicleta al aire libre", "Trote continuo", "Intervalos (HIIT)", "Cuerda / salto a la cuerda", "Sparring / boxeo"],
-        };
-
+        /* Plan semilla base por si no carga el JSON de inmediato */
         const SEED_PLAN_DAYS = [
             {
                 nombre: "Glúteo + Cuádriceps + Pantorrilla", ejercicios: [
@@ -1464,47 +1461,7 @@
                     ["Glúteos", "Patada de glúteo en máquina", 2, "12-15", 75], ["Glúteos", "Abducción de cadera en máquina", 3, "15-20", 60],
                     ["Pantorrillas", "Elevación de talones de pie", 3, "12-20", 60],
                 ]
-            },
-            {
-                nombre: "Espalda + Bíceps + Abdomen", ejercicios: [
-                    ["Espalda", "Jalón al pecho abierto", 3, "10-12", 90], ["Espalda", "Remo sentado en polea", 3, "10-12", 90],
-                    ["Espalda", "Remo con mancuerna a un brazo", 3, "10-12", 90], ["Espalda", "Pull-over en polea", 2, "12-15", 75],
-                    ["Bíceps", "Curl con mancuernas", 3, "10-15", 60], ["Bíceps", "Curl martillo", 2, "12-15", 60],
-                    ["Abdomen", "Plancha", 3, "30-45", 60],
-                ]
-            },
-            {
-                nombre: "Glúteo + Femoral + Pierna completa", ejercicios: [
-                    ["Glúteos", "Hip Thrust con barra", 3, "8-12", 120], ["Femorales", "Peso muerto rumano", 3, "8-12", 120],
-                    ["Femorales", "Curl femoral sentado", 3, "10-15", 90], ["Glúteos", "Búlgara asistida", 2, "8-10", 90],
-                    ["Cuádriceps", "Prensa 45°", 3, "12-15", 120], ["Glúteos", "Abducción de cadera en máquina", 3, "15-20", 60],
-                    ["Pantorrillas", "Elevación de talones sentado", 3, "12-20", 60],
-                ]
-            },
-            {
-                nombre: "Pecho + Hombro + Tríceps", ejercicios: [
-                    ["Pecho", "Press de pecho en máquina", 3, "10-12", 90], ["Pecho", "Press inclinado con mancuernas", 3, "10-12", 90],
-                    ["Pecho", "Aperturas en máquina (Peck Deck)", 2, "12-15", 60], ["Hombros", "Press de hombros con mancuernas", 3, "10-12", 90],
-                    ["Hombros", "Elevación lateral", 3, "12-15", 60], ["Tríceps", "Extensión de tríceps con cuerda", 3, "10-15", 60],
-                    ["Tríceps", "Extensión unilateral en polea", 2, "12-15", 60],
-                ]
-            },
-            {
-                nombre: "Glúteo + Cuádriceps (variante) + Abdomen", ejercicios: [
-                    ["Glúteos", "Hip Thrust con barra", 3, "10-12", 120], ["Cuádriceps", "Sentadilla goblet", 3, "10-12", 120],
-                    ["Cuádriceps", "Prensa horizontal", 3, "10-12", 90], ["Cuádriceps", "Extensión de piernas", 3, "12-15", 75],
-                    ["Glúteos", "Patada de glúteo en polea", 3, "12-15", 75], ["Glúteos", "Abducción en polea", 3, "15-20", 60],
-                    ["Abdomen", "Crunch en máquina", 3, "12-20", 60],
-                ]
-            },
-            {
-                nombre: "Espalda + Femoral + Glúteo medio + Pantorrilla", ejercicios: [
-                    ["Espalda", "Remo con barra T", 3, "8-12", 90], ["Espalda", "Jalón al pecho neutro", 3, "10-12", 90],
-                    ["Femorales", "Peso muerto rumano con mancuernas", 3, "8-12", 120], ["Femorales", "Curl femoral sentado", 3, "10-15", 90],
-                    ["Glúteos", "Abducción de cadera en máquina", 3, "15-20", 60], ["Pantorrillas", "Elevación de talones sentado", 3, "12-20", 60],
-                    ["Abdomen", "Elevación de piernas colgado", 3, "12-15", 60],
-                ]
-            },
+            }
         ];
 
         /* ---------------------------------------------------------
@@ -1545,10 +1502,8 @@
         function getCssVar(name) { return getComputedStyle(document.body).getPropertyValue(name).trim() || "#888"; }
 
         /* ---------------------------------------------------------
-           3. MODELO DE DATOS Y NUEVO HELPER PARA SEMANAS
+           3. MODELO DE DATOS Y HELPER PARA SEMANAS
            --------------------------------------------------------- */
-
-        // Helper para inicializar y obtener los días de la semana activa
         function getDays(c) {
             if (!c.daysByWeek) {
                 c.daysByWeek = {};
@@ -1589,7 +1544,7 @@
                 currentWeek: 1,
                 activeDayId: null,
                 days: [],
-                daysByWeek: {}, // Nueva estructura para semanas independientes
+                daysByWeek: {},
                 weeks: weeksObjectFor(8),
                 notes: {},
                 history: [],
@@ -1603,14 +1558,12 @@
         }
 
         function defaultLibrary() {
-            const exercises = {};
-            MUSCLE_GROUPS.forEach(g => { exercises[g] = [...(DEFAULT_EXERCISE_DB[g] || [])]; });
-            return { groups: [...MUSCLE_GROUPS], exercises };
+            return { groups: [...MUSCLE_GROUPS], exercises: {} };
         }
 
         function defaultTemplates() {
             return {
-                plans: [{ id: uid("tpl"), nombre: "Plan sugerido — Full body 6 días", dias: SEED_PLAN_DAYS.map(d => ({ nombre: d.nombre, ejercicios: d.ejercicios.map(r => ({ grupo: r[0], ejercicio: r[1], series: r[2], reps: r[3], descanso: r[4] })) })) }],
+                plans: [{ id: uid("tpl"), nombre: "Plan base", dias: SEED_PLAN_DAYS.map(d => ({ nombre: d.nombre, ejercicios: d.ejercicios.map(r => ({ grupo: r[0], ejercicio: r[1], series: r[2], reps: r[3], descanso: r[4] })) })) }],
                 days: [],
             };
         }
@@ -1630,7 +1583,7 @@
         }
 
         /* ---------------------------------------------------------
-           4. MIGRACIÓN DESDE LA VERSIÓN ANTERIOR (plan único)
+           4. MIGRACIÓN DESDE LA VERSIÓN ANTERIOR
            --------------------------------------------------------- */
         function migrateOldPlanIfNeeded(st) {
             if (st.migratedOld) return st;
@@ -1675,15 +1628,6 @@
                 if (old.personal && old.personal.entrenador) st.trainer.nombre = old.personal.entrenador;
                 if (typeof old.sound === "boolean") st.sound = old.sound;
                 if (old.theme) st.theme = old.theme;
-                // volcamos también los ejercicios personalizados que hubiera
-                if (old.customExercises) {
-                    Object.keys(old.customExercises).forEach(g => {
-                        if (!st.library.exercises[g]) st.library.exercises[g] = [];
-                        (old.customExercises[g] || []).forEach(name => {
-                            if (!st.library.exercises[g].includes(name)) st.library.exercises[g].push(name);
-                        });
-                    });
-                }
                 showToast("✅ Se importó tu plan anterior como tu primer alumno");
             } catch (e) {
                 console.warn("No se pudo migrar el plan anterior", e);
@@ -1920,36 +1864,40 @@
 
         function exerciseRowHTML(ex) {
             return `
-          <tr data-id="${ex.id}" class="${ex.completado ? 'completed-row' : ''}">
-            <td class="col-check"><input type="checkbox" class="chk-complete" ${ex.completado ? "checked" : ""} aria-label="Marcar ${escapeAttr(ex.ejercicio)} como completado"></td>
-            <td><select class="sel-grupo" aria-label="Grupo muscular">${groupOptionsHTML(ex.grupo)}</select></td>
-            <td>
-              <input type="text" class="inp-ejercicio" list="dl-${slug(ex.grupo)}" value="${escapeAttr(ex.ejercicio)}" aria-label="Nombre del ejercicio">
-              <span class="badge-progress" hidden>↑ Subir peso</span>
-            </td>
-            <td><input type="number" min="1" class="inp-series" value="${ex.series}" aria-label="Series"></td>
-            <td><input type="text" class="inp-reps" value="${escapeAttr(ex.reps)}" aria-label="Repeticiones"></td>
-            <td class="col-timer">
-              <div style="display:flex;align-items:center;gap:4px;">
-                <input type="number" min="0" class="inp-descanso" value="${ex.descanso}" style="width:56px;" aria-label="Descanso en segundos">s
-              </div>
-              <div class="timer" data-remaining="${ex.descanso}">
-                <span class="timer-display">${fmtTime(ex.descanso)}</span>
-                <button type="button" class="btn-timer-start" aria-label="Iniciar descanso" title="Iniciar">▶</button>
-                <button type="button" class="btn-timer-pause" aria-label="Pausar descanso" title="Pausar">⏸</button>
-                <button type="button" class="btn-timer-reset" aria-label="Reiniciar descanso" title="Reiniciar">↺</button>
-              </div>
-            </td>
-            <td><input type="number" min="0" max="10" class="inp-rir" value="${escapeAttr(ex.rir || '')}" placeholder="RIR" aria-label="Repeticiones en Reserva" style="width:50px;text-align:center;"></td>
-            <td><input type="number" min="0" step="0.5" class="inp-peso" placeholder="kg" value="${ex.peso}" aria-label="Peso usado en kilogramos"></td>
-            <td><input type="text" class="inp-notas" placeholder="Notas" value="${escapeAttr(ex.notas)}" aria-label="Notas"></td>
-            <td class="col-actions no-print">
-              <button type="button" class="btn btn-icon btn-dup" title="Duplicar" aria-label="Duplicar ejercicio">⧉</button>
-              <button type="button" class="btn btn-icon btn-up" title="Subir" aria-label="Subir ejercicio">↑</button>
-              <button type="button" class="btn btn-icon btn-down" title="Bajar" aria-label="Bajar ejercicio">↓</button>
-              <button type="button" class="btn btn-icon btn-del" title="Eliminar" aria-label="Eliminar ejercicio">🗑</button>
-            </td>
-          </tr>`;
+                  <tr data-id="${ex.id}" class="${ex.completado ? 'completed-row' : ''}">
+                    <td class="col-check"><input type="checkbox" class="chk-complete" ${ex.completado ? "checked" : ""} aria-label="Marcar como completado"></td>
+                    <td><select class="sel-grupo" aria-label="Grupo muscular">${groupOptionsHTML(ex.grupo)}</select></td>
+                    <td>
+                      <input type="text" class="inp-ejercicio" list="dl-${slug(ex.grupo)}" value="${escapeAttr(ex.ejercicio)}" aria-label="Nombre del ejercicio">
+                      <span class="badge-progress" hidden>↑ Subir peso</span>
+                    </td>
+                    <td><input type="number" min="1" class="inp-series" value="${ex.series}" aria-label="Series"></td>
+                    <td><input type="text" class="inp-reps" value="${escapeAttr(ex.reps)}" aria-label="Repeticiones"></td>
+                    <td class="col-timer">
+                      <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="number" min="0" class="inp-descanso" value="${ex.descanso}" style="width:56px;" aria-label="Descanso">s
+                      </div>
+                      <div class="timer" data-remaining="${ex.descanso}">
+                        <span class="timer-display">${fmtTime(ex.descanso)}</span>
+                        <button type="button" class="btn-timer-start" aria-label="Iniciar descanso" title="Iniciar">▶</button>
+                        <button type="button" class="btn-timer-pause" aria-label="Pausar descanso" title="Pausar">⏸</button>
+                        <button type="button" class="btn-timer-reset" aria-label="Reiniciar descanso" title="Reiniciar">↺</button>
+                      </div>
+                    </td>
+                    <td><input type="number" min="0" max="10" class="inp-rir" value="${escapeAttr(ex.rir || '')}" placeholder="RIR" aria-label="Repeticiones en Reserva" style="width:50px;text-align:center;"></td>
+                    <td><input type="number" min="0" step="0.5" class="inp-peso" placeholder="kg" value="${ex.peso}"></td>
+
+                    <td style="text-align:center;">
+                      <button type="button" class="btn btn-icon btn-ghost btn-ejemplo" data-ejercicio="${escapeAttr(ex.ejercicio)}" title="Ver ejemplo">🖼️</button>
+                    </td>
+
+                    <td class="col-actions no-print">
+                      <button type="button" class="btn btn-icon btn-dup" title="Duplicar">⧉</button>
+                      <button type="button" class="btn btn-icon btn-up" title="Subir">↑</button>
+                      <button type="button" class="btn btn-icon btn-down" title="Bajar">↓</button>
+                      <button type="button" class="btn btn-icon btn-del" title="Eliminar">🗑</button>
+                    </td>
+                  </tr>`;
         }
 
         function renderDayPanel() {
@@ -1962,38 +1910,38 @@
             }
             const notes = ensureNotesFor(c, day.id);
             panel.innerHTML = `
-            <div class="day-print-section">
-              <h3 style="margin-bottom:10px;">${escapeAttr(day.nombre)}</h3>
-              <div class="table-toolbar no-print">
-                <div class="search-box"><input type="text" id="searchExercise" placeholder="Buscar ejercicio o grupo…" aria-label="Buscar ejercicio"></div>
-                <div style="display:flex;gap:8px;">
-                  <button class="btn btn-primary btn-sm" id="btnAddExercise">➕ Añadir ejercicio</button>
-                </div>
-              </div>
-              <div class="table-scroll">
-                <table class="exercise-table" aria-label="Ejercicios de ${escapeAttr(day.nombre)}">
-                  <thead>
-                    <tr>
-                      <th class="col-check">Ok</th><th>Grupo</th><th>Ejercicio</th><th>Series</th><th>Reps.</th>
-                      <th>Descanso</th><th>RIR</th><th>Peso</th><th>Notas</th><th class="col-actions">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbodyExercises">${day.ejercicios.map(exerciseRowHTML).join("")}</tbody>
-                </table>
-              </div>
-              ${day.ejercicios.length === 0 ? '<div class="empty-state">Este día no tiene ejercicios todavía. Usa "➕ Añadir ejercicio".</div>' : ''}
-              <div class="day-footer-row no-print">
-                <div style="font-size:12.5px;color:var(--muted);">
-                  Volumen del día: <strong style="color:var(--text);">${Math.round(dayVolume(day)).toLocaleString("es-CL")} kg</strong>
-                  &nbsp;·&nbsp; Tiempo estimado: <strong style="color:var(--text);">${Math.round(dayEstimatedSeconds(day) / 60)} min</strong>
-                </div>
-              </div>
-              <div class="notes-grid">
-                <div class="field"><label for="note-molestias">Molestias</label><textarea id="note-molestias" data-field="molestias">${escapeAttr(notes.molestias)}</textarea></div>
-                <div class="field"><label for="note-mejoras">Mejoras técnicas</label><textarea id="note-mejoras" data-field="mejoras">${escapeAttr(notes.mejoras)}</textarea></div>
-                <div class="field"><label for="note-peso">Peso recomendado próxima sesión</label><textarea id="note-peso" data-field="pesoRecomendado">${escapeAttr(notes.pesoRecomendado)}</textarea></div>
-              </div>
-            </div>`;
+                    <div class="day-print-section">
+                      <h3 style="margin-bottom:10px;">${escapeAttr(day.nombre)}</h3>
+                      <div class="table-toolbar no-print">
+                        <div class="search-box"><input type="text" id="searchExercise" placeholder="Buscar ejercicio o grupo…"></div>
+                        <div style="display:flex;gap:8px;">
+                          <button class="btn btn-primary btn-sm" id="btnAddExercise">➕ Añadir ejercicio</button>
+                        </div>
+                      </div>
+                      <div class="table-scroll">
+                        <table class="exercise-table">
+                          <thead>
+                            <tr>
+                              <th class="col-check">Ok</th><th>Grupo</th><th>Ejercicio</th><th>Series</th><th>Reps.</th>
+                              <th>Descanso</th><th>RIR</th><th>Peso</th><th>Ejemplo</th><th class="col-actions">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody id="tbodyExercises">${day.ejercicios.map(exerciseRowHTML).join("")}</tbody>
+                        </table>
+                      </div>
+                      ${day.ejercicios.length === 0 ? '<div class="empty-state">Añade tu primer ejercicio.</div>' : ''}
+                      <div class="day-footer-row no-print">
+                        <div style="font-size:12.5px;color:var(--muted);">
+                          Volumen del día: <strong style="color:var(--text);">${Math.round(dayVolume(day)).toLocaleString("es-CL")} kg</strong>
+                          &nbsp;·&nbsp; Tiempo estimado: <strong style="color:var(--text);">${Math.round(dayEstimatedSeconds(day) / 60)} min</strong>
+                        </div>
+                      </div>
+                      <div class="notes-grid">
+                        <div class="field"><label for="note-molestias">Molestias</label><textarea id="note-molestias" data-field="molestias">${escapeAttr(notes.molestias)}</textarea></div>
+                        <div class="field"><label for="note-mejoras">Mejoras técnicas</label><textarea id="note-mejoras" data-field="mejoras">${escapeAttr(notes.mejoras)}</textarea></div>
+                        <div class="field"><label for="note-peso">Peso recomendado próxima sesión</label><textarea id="note-peso" data-field="pesoRecomendado">${escapeAttr(notes.pesoRecomendado)}</textarea></div>
+                      </div>
+                    </div>`;
             updateProgressionBadges();
         }
 
@@ -2396,6 +2344,28 @@
 
             if (e.target.closest?.("#modalBackdrop") && e.target.id === "modalBackdrop") { closeModal(); return; }
 
+            /* ---------- Mostrar modal de ejemplo ---------- */
+            const btnEjemplo = e.target.closest?.(".btn-ejemplo");
+            if (btnEjemplo) {
+                const nombreEjercicio = btnEjemplo.dataset.ejercicio;
+                if (!nombreEjercicio) {
+                    showToast("⚠ Escribe o selecciona un ejercicio primero");
+                    return;
+                }
+                const imgUrl = obtenerImagenEjercicio(nombreEjercicio);
+                openModal(`
+                        <h3 style="text-align:center; margin-bottom: 10px;">${escapeAttr(nombreEjercicio)}</h3>
+                        <div style="text-align:center; background:#0f1115; border-radius:12px; padding:10px;">
+                            <img src="${imgUrl}" alt="${escapeAttr(nombreEjercicio)}" style="max-width:100%; border-radius:8px;">
+                        </div>
+                        <div class="modal-actions" style="justify-content: center; margin-top: 15px;">
+                            <button class="btn btn-primary" id="mCloseImg">Cerrar</button>
+                        </div>
+                    `);
+                document.getElementById("mCloseImg").onclick = closeModal;
+                return;
+            }
+
             /* ---------- Home screen ---------- */
             if (e.target.id === "btnNewClient") { modalNewClient(); return; }
             const actBtn = e.target.closest?.("[data-act]");
@@ -2662,7 +2632,6 @@
                 }
                 else if (e.target.classList.contains("inp-rir")) { ex.rir = e.target.value; saveState(); }
                 else if (e.target.classList.contains("inp-peso")) { ex.peso = e.target.value; saveState(); renderDashboard(); }
-                else if (e.target.classList.contains("inp-notas")) { ex.notas = e.target.value; saveState(); }
                 return;
             }
         });
@@ -2678,6 +2647,11 @@
             if (!val) return;
             ex.ejercicio = val;
             learnExercise(ex.grupo, val);
+
+            // Actualizar el dataset del botón de ejemplo
+            const btnEjemplo = row.querySelector(".btn-ejemplo");
+            if (btnEjemplo) btnEjemplo.dataset.ejercicio = val;
+
             renderDatalists();
             saveState();
             updateProgressionBadges();
@@ -2802,10 +2776,10 @@
             } catch (err) { showToast("⚠ Error al exportar el respaldo general"); }
         }
 
-        const PDF_INK = [31, 35, 64];        // #1F2340 — encabezados y texto fuerte
-        const PDF_MUTED = [110, 116, 138];   // gris azulado para texto secundario
-        const PDF_ACCENT = [61, 196, 151];   // #3DC497 — línea de acento / detalles
-        const PDF_LIGHT = [239, 240, 251];   // fondo muy suave para franjas/tablas
+        const PDF_INK = [31, 35, 64];
+        const PDF_MUTED = [110, 116, 138];
+        const PDF_ACCENT = [61, 196, 151];
+        const PDF_LIGHT = [239, 240, 251];
 
         function pdfSectionTitle(doc, text, x, y, pageW) {
             doc.setFont("helvetica", "bold"); doc.setFontSize(11.5); doc.setTextColor(...PDF_INK);
@@ -2957,6 +2931,49 @@
         function init() {
             state = loadState();
             soundEnabled = state.sound !== false;
+
+            // Cargar datos de ejercicios desde el JSON
+            fetch('./exercises.json')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.exercises) {
+                        REPDB_DATA = data.exercises;
+
+                        // Limpiar biblioteca base y construirla desde el JSON
+                        state.library.exercises = {};
+                        state.library.groups = [];
+
+                        REPDB_DATA.forEach(ex => {
+                            if (!ex.name_es) return;
+
+                            let grupo = "Otros";
+                            if (ex.category === "cardio") grupo = "Cardio";
+                            else if (ex.body_part === "core") grupo = "Abdomen";
+                            else if (ex.body_part === "chest") grupo = "Pecho";
+                            else if (ex.body_part === "back") grupo = "Espalda";
+                            else if (ex.body_part === "shoulders") grupo = "Hombros";
+                            else if (ex.body_part === "lower_legs") grupo = "Pantorrillas";
+                            else if (ex.body_part === "lower_arms") grupo = "Antebrazos";
+                            else if (ex.body_part === "full_body") grupo = "Cardio";
+                            else if (ex.body_part === "upper_arms") {
+                                grupo = (ex.primary_muscles && ex.primary_muscles.includes("biceps_brachii")) ? "Bíceps" : "Tríceps";
+                            }
+                            else if (ex.body_part === "upper_legs") {
+                                if (ex.primary_muscles && ex.primary_muscles.includes("gluteus_maximus")) grupo = "Glúteos";
+                                else if (ex.primary_muscles && ex.primary_muscles.includes("hamstrings")) grupo = "Femorales";
+                                else grupo = "Cuádriceps";
+                            }
+
+                            if (!state.library.groups.includes(grupo)) state.library.groups.push(grupo);
+                            learnExercise(grupo, ex.name_es);
+                        });
+
+                        renderDatalists();
+                        if (state.ui.screen === "client") renderDayPanel();
+                    }
+                })
+                .catch(e => console.error("No se encontró exercises.json:", e));
+
             renderShell();
         }
         document.addEventListener("DOMContentLoaded", init);
